@@ -4,22 +4,77 @@ import bot from "@/helpers/bot";
 import fileUrl from "@/helpers/fileUrl";
 import * as download from 'download'
 import nsfwSpy from "@/helpers/nsfwSpy";
-import model from "@/helpers/model";
 import getModel from "@/helpers/model";
 import tensorflow from "@/helpers/tf";
-import {NSFW_CLASSES} from "nsfwjs/dist/nsfw_classes";
-import {pre} from "@typegoose/typegoose";
+import {File, InputMediaPhoto, Message, User} from "grammy/types";
 
 const isUseNsfwSpy = false
 
 const isUseNsfwJS = true
-const nsfwJsTriggerClasses: Array<'Drawing' | 'Hentai' | 'Neutral' | 'Porn' | 'Sexy'> = ['Porn', 'Sexy', 'Hentai']
+
+let mediaGroupCache: Map<String, Array<Context>> = new Map()
+let runningMediaGroups: Set<String> = new Set()
 
 export default async function handlePhoto(ctx: Context) {
-  const start = new Date().getTime()
   const message = ctx.msg
+
+  const mediaGroupId = message.media_group_id
+  if (mediaGroupId) {
+    if (!mediaGroupCache.has(mediaGroupId)) {
+      mediaGroupCache.set(mediaGroupId, [])
+    }
+
+    mediaGroupCache.get(mediaGroupId).push(ctx)
+
+    if (!runningMediaGroups.has(mediaGroupId)) {
+      runningMediaGroups.add(mediaGroupId)
+      setTimeout(() => {
+        const contexts = mediaGroupCache.get(mediaGroupId)
+        runningMediaGroups.delete(mediaGroupId)
+        mediaGroupCache.delete(mediaGroupId)
+
+        processMediaGroup(mediaGroupId, contexts)
+      }, 1000)
+    }
+    return
+  } else {
+    processMedia(ctx)
+  }
+}
+
+
+async function processMedia(context: Context) {
+  const isNsfw = await processMessage(context, null)
+  sendResponse([context], isNsfw).then(() => postProcess([context]))
+}
+
+async function processMediaGroup(mediaGroupId: String, contexts: Array<Context>) {
+  let results = await Promise.all(contexts
+      .map((context) => processMessage(context, mediaGroupId)))
+
+  const isNsfw = results.find((it) => it)
+  sendResponse(contexts, isNsfw).then(() => postProcess(contexts))
+}
+
+async function postProcess(contexts: Array<Context>) {
+  const firstContext = contexts[0]
+  const message = firstContext.message
   const chat = message.chat
-  const messageLogId = `${message.message_id}@${chat.id}`
+
+  const deleteOriginal = chat.type != "private"
+
+  if (deleteOriginal) {
+    contexts.forEach((context) => context.deleteMessage())
+  }
+}
+
+async function processMessage(context: Context, mediaGroupId: String) {
+  const start = new Date().getTime()
+
+  const message = context.message
+  const chat = message.chat
+
+  const messageLogId = mediaGroupId ? `${message.message_id}@${chat.id} (media group ${mediaGroupId}` : `${message.message_id}@${chat.id}`
 
   console.log(`Processing message ${messageLogId}.`)
 
@@ -33,7 +88,7 @@ export default async function handlePhoto(ctx: Context) {
     return
   }
 
-  const photo = await ctx.getFile()
+  const photo = await context.getFile()
   const photoUrl = fileUrl(photo.file_path)
 
   const data = await download(photoUrl)
@@ -64,45 +119,79 @@ export default async function handlePhoto(ctx: Context) {
     logStateWithTime(start, `Message ${messageLogId} content is scanned by NSFWJS. NSFW Probability: ${nsfwProbability}. Predictions: ${JSON.stringify(predictions)}`)
   }
 
+  logStateWithTime(start, `Message ${messageLogId} is processed`)
+  return isNsfw
+}
+
+function sendResponse(contexts: Array<Context>, isNsfw: Boolean): Promise<any> {
+  const context = contexts[0]
+  const message = context.message
+  const chat = message.chat
+
   if (isNsfw == undefined) {
-    ctx.reply("😭 Что-то случилось и я пока не могу определять NSFW-контент.", { reply_to_message_id: message.message_id })
+    context.reply("😭 Что-то случилось и я пока не могу определять NSFW-контент.", { reply_to_message_id: message.message_id })
+    return
   }
 
-  const deleteOriginal = chat.type != "private"
   const sendNotNsfwResponse = chat.type == "private"
 
   if (isNsfw) {
-    console.log(`Message ${messageLogId} has NSFW content.`)
+    if (contexts.length == 1) {
+      return sendMediaNsfwResponse(context)
+    } else {
+      return sendMediaGroupNsfwResponse(contexts)
+    }
+  } else if (sendNotNsfwResponse) {
+    return context.reply("🌺 Это не похоже на NSFW-контент.", { reply_to_message_id: message.message_id })
+  }
+}
 
-    const sender: any = message.from
+async function sendMediaNsfwResponse(context: Context): Promise<any> {
+  const message = context.message
+  const photo = await context.getFile()
 
-    const visibleName = (sender.title || [sender.first_name || '', sender.last_name || ''].join(' '))
-    const link = sender.username
-        ? `https://t.me/${sender.username}`
-        : sender.invite_link
+  return context.replyWithPhoto(photo.file_id, {
+    caption: getNsfwResponseCaption(message.from, message.caption),
+    has_spoiler: true,
+    parse_mode: "HTML",
+    reply_to_message_id: message.message_id
+  })
+}
 
-    ctx.replyWithPhoto(photo.file_id, {
-      caption: `
-🍒 от ${link ? `<a href="${link}">${visibleName}</a>` : visibleName} ${message.caption ? `\n${message.caption}` : ''}
+async function sendMediaGroupNsfwResponse(contexts: Array<Context>): Promise<any> {
+  const firstContext = contexts[0]
+  const firstMessage = firstContext.message
+
+  let spoileredPhotos = await Promise.all(contexts
+      .map((context) => context.getFile())
+      .map(async (file) => {
+        return {
+          type: "photo",
+          media: (await file).file_id,
+          has_spoiler: true
+        } as InputMediaPhoto
+      }))
+
+  spoileredPhotos[0].caption = getNsfwResponseCaption(firstMessage.from, firstMessage.caption)
+  spoileredPhotos[0].parse_mode = "HTML"
+
+  return firstContext.replyWithMediaGroup(spoileredPhotos)
+}
+
+function getNsfwResponseCaption(sender: User, caption: String): string {
+  const visibleName = [sender.first_name || '', sender.last_name || ''].join(' ')
+  const link = sender.username
+      ? `https://t.me/${sender.username}`
+      : null
+
+  return `
+🍒 от ${link ? `<a href="${link}">${visibleName}</a>` : visibleName} ${caption ? `\n${caption}` : ''}
 
 <tg-spoiler>
 AI <a href="t.me/${bot.botInfo.username}">Spoiler Nudes 🍒</a>
 посчитал это NSFW-контентом
 </tg-spoiler>
-`,
-      has_spoiler: true,
-      parse_mode: "HTML",
-      reply_to_message_id: message.message_id
-    }).then(() => {
-      if (deleteOriginal) {
-        ctx.deleteMessage()
-      }
-    })
-  } else if (sendNotNsfwResponse) {
-    ctx.reply("🌺 Это не похоже на NSFW-контент.", { reply_to_message_id: message.message_id })
-  }
-
-  logStateWithTime(start, `Message ${messageLogId} is processed`)
+`
 }
 
 function logStateWithTime(start, state) {
