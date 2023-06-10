@@ -4,11 +4,22 @@ import bot from "@/helpers/bot";
 import fileUrl from "@/helpers/fileUrl";
 import * as download from 'download'
 import nsfwSpy from "@/helpers/nsfwSpy";
+import model from "@/helpers/model";
+import getModel from "@/helpers/model";
+import tensorflow from "@/helpers/tf";
+import {NSFW_CLASSES} from "nsfwjs/dist/nsfw_classes";
+import {pre} from "@typegoose/typegoose";
+
+const isUseNsfwSpy = false
+
+const isUseNsfwJS = true
+const nsfwJsTriggerClasses: Array<'Drawing' | 'Hentai' | 'Neutral' | 'Porn' | 'Sexy'> = ['Porn', 'Sexy', 'Hentai']
 
 export default async function handlePhoto(ctx: Context) {
   const start = new Date().getTime()
   const message = ctx.msg
-  const messageLogId = `${message.message_id}@${message.chat.id}`
+  const chat = message.chat
+  const messageLogId = `${message.message_id}@${chat.id}`
 
   console.log(`Processing message ${messageLogId}.`)
 
@@ -28,35 +39,72 @@ export default async function handlePhoto(ctx: Context) {
   const data = await download(photoUrl)
   logStateWithTime(start, `Message ${messageLogId} content is downloaded`)
 
-  const result = await nsfwSpy.classifyImageFromByteArray(data)
-  logStateWithTime(start, `Message ${messageLogId} content is scanned`)
+  let isNsfw: Boolean
+  if (isUseNsfwSpy) {
+    const result = await nsfwSpy.classifyImageFromByteArray(data)
+    isNsfw = result.isNsfw
 
-  const sender: any = message.from
+    logStateWithTime(start, `Message ${messageLogId} content is scanned by NsfwSpy. Predictions: ${JSON.stringify(result)}`)
+  }
 
-  const visibleName = (sender.title || [sender.first_name || '', sender.last_name || ''].join(' '))
-  const link = sender.username
-      ? `https://t.me/${sender.username}`
-      : sender.invite_link
+  if (isUseNsfwJS) {
+    const image = await tensorflow.node.decodeImage(data)
+    const predictions = await getModel().classify(image)
+    image.dispose()
 
-  if (result.isNsfw) {
-    console.log(`Message ${messageLogId} has NSFW content. NsfwSpy result: ${JSON.stringify(result)}.`)
-    ctx.deleteMessage()
+    let nsfwProbability = 0.0
+    for (let prediction of predictions) {
+      console.log(`Prediction (${prediction.className}) = ${prediction.probability}`)
+      const className = prediction.className
+      if (className == 'Porn' || className == 'Sexy' || className == 'Hentai') {
+        console.log(`Trigger to ${prediction.className}!`)
+        nsfwProbability += prediction.probability
+      }
+    }
+    isNsfw = nsfwProbability >= 0.5
+
+    logStateWithTime(start, `Message ${messageLogId} content is scanned by NSFWJS. NSFW Probability: ${nsfwProbability}. Predictions: ${JSON.stringify(predictions)}`)
+  }
+
+  if (isNsfw == undefined) {
+    ctx.reply("😭 Что-то случилось и я пока не могу определять NSFW-контент.", { reply_to_message_id: message.message_id })
+  }
+
+  const deleteOriginal = chat.type != "private"
+  const sendNotNsfwResponse = chat.type == "private"
+
+  if (isNsfw) {
+    console.log(`Message ${messageLogId} has NSFW content.`)
+
+    if (deleteOriginal) {
+      ctx.deleteMessage()
+    }
+
+    const sender: any = message.from
+
+    const visibleName = (sender.title || [sender.first_name || '', sender.last_name || ''].join(' '))
+    const link = sender.username
+        ? `https://t.me/${sender.username}`
+        : sender.invite_link
 
     ctx.replyWithPhoto(photo.file_id, {
       caption: `
 🍒 от ${link ? `<a href="${link}">${visibleName}</a>` : visibleName} ${message.caption ? `\n${message.caption}` : ''}
 
 <tg-spoiler>
-<a href="t.me/${bot.botInfo.username}">Spoiler Nudes 🍒</a>
+AI <a href="t.me/${bot.botInfo.username}">Spoiler Nudes 🍒</a>
 посчитал это NSFW-контентом
 </tg-spoiler>
-        `,
+`,
       has_spoiler: true,
-      parse_mode: "HTML"
+      parse_mode: "HTML",
+      reply_to_message_id: message.message_id
     })
+  } else if (sendNotNsfwResponse) {
+    ctx.reply("🌺 Это не похоже на NSFW-контент.", { reply_to_message_id: message.message_id })
   }
 
-  logStateWithTime(start, `Message ${message.message_id} is processed`)
+  logStateWithTime(start, `Message ${messageLogId} is processed`)
 }
 
 function logStateWithTime(start, state) {

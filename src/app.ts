@@ -5,13 +5,15 @@ import 'module-alias/register'
 
 // Config dotenv
 import * as dotenv from 'dotenv'
-dotenv.config({ path: `${__dirname}/../.env` })
 // Dependencies
-import { run } from '@grammyjs/runner'
+import {run} from '@grammyjs/runner'
 import Cluster from '@/helpers/Cluster'
 import bot from '@/helpers/bot'
 import handlePhoto from "@/handlers/handlePhoto";
+import {loadModel} from "@/helpers/model";
 import nsfwSpy from "@/helpers/nsfwSpy";
+
+dotenv.config({ path: `${__dirname}/../.env` })
 
 async function runApp() {
   console.log('Starting app...')
@@ -27,6 +29,10 @@ async function runApp() {
   console.log("Initializing NsfwSpy")
   await nsfwSpy.load()
   console.log("NsfwSpy are successfully initialized.")
+
+  console.log("Initializing NsfwJS")
+  await loadModel()
+  console.log("NsfwJS are successfully initialized.")
 
   await bot.init()
   run(bot)
