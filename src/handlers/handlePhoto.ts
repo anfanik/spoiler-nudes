@@ -54,10 +54,8 @@ export default async function handlePhoto(ctx: Context) {
 
     let nsfwProbability = 0.0
     for (let prediction of predictions) {
-      console.log(`Prediction (${prediction.className}) = ${prediction.probability}`)
       const className = prediction.className
       if (className == 'Porn' || className == 'Sexy' || className == 'Hentai') {
-        console.log(`Trigger to ${prediction.className}!`)
         nsfwProbability += prediction.probability
       }
     }
