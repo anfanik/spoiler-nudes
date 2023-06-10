@@ -74,10 +74,6 @@ export default async function handlePhoto(ctx: Context) {
   if (isNsfw) {
     console.log(`Message ${messageLogId} has NSFW content.`)
 
-    if (deleteOriginal) {
-      ctx.deleteMessage()
-    }
-
     const sender: any = message.from
 
     const visibleName = (sender.title || [sender.first_name || '', sender.last_name || ''].join(' '))
@@ -97,6 +93,10 @@ AI <a href="t.me/${bot.botInfo.username}">Spoiler Nudes 🍒</a>
       has_spoiler: true,
       parse_mode: "HTML",
       reply_to_message_id: message.message_id
+    }).then(() => {
+      if (deleteOriginal) {
+        ctx.deleteMessage()
+      }
     })
   } else if (sendNotNsfwResponse) {
     ctx.reply("🌺 Это не похоже на NSFW-контент.", { reply_to_message_id: message.message_id })
