@@ -80,12 +80,12 @@ async function processMessage(context: Context, mediaGroupId: String) {
 
   if (!message.photo.length) {
     console.log(`Message ${messageLogId} doesn't have a photo.`)
-    return
+    return false
   }
 
   if (message.has_media_spoiler) {
     console.log(`Message ${messageLogId} is already spoilered.`)
-    return
+    return false
   }
 
   const photo = await context.getFile()
@@ -129,8 +129,7 @@ function sendResponse(contexts: Array<Context>, isNsfw: Boolean): Promise<any> {
   const chat = message.chat
 
   if (isNsfw == undefined) {
-    context.reply("😭 Что-то случилось и я пока не могу определять NSFW-контент.", { reply_to_message_id: message.message_id })
-    return
+    return context.reply("😭 Что-то случилось и я пока не могу определить NSFW-контент в этом сообщении.", { reply_to_message_id: message.message_id })
   }
 
   const sendNotNsfwResponse = chat.type == "private"
