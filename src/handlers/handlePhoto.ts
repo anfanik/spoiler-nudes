@@ -45,7 +45,7 @@ export default async function handlePhoto(ctx: Context) {
 
 async function processMedia(context: Context) {
   const isNsfw = await processMessage(context, null)
-  sendResponse([context], isNsfw).then(() => postProcess([context]))
+  sendResponse([context], isNsfw).then(() => postProcess([context], isNsfw))
 }
 
 async function processMediaGroup(mediaGroupId: String, contexts: Array<Context>) {
@@ -53,18 +53,20 @@ async function processMediaGroup(mediaGroupId: String, contexts: Array<Context>)
       .map((context) => processMessage(context, mediaGroupId)))
 
   const isNsfw = results.find((it) => it)
-  sendResponse(contexts, isNsfw).then(() => postProcess(contexts))
+  sendResponse(contexts, isNsfw).then(() => postProcess(contexts, isNsfw))
 }
 
-async function postProcess(contexts: Array<Context>) {
+async function postProcess(contexts: Array<Context>, isNsfw: Boolean) {
   const firstContext = contexts[0]
   const message = firstContext.message
   const chat = message.chat
 
-  const deleteOriginal = chat.type != "private"
+  if (isNsfw) {
+    const deleteOriginal = chat.type != "private"
 
-  if (deleteOriginal) {
-    contexts.forEach((context) => context.deleteMessage())
+    if (deleteOriginal) {
+      contexts.forEach((context) => context.deleteMessage())
+    }
   }
 }
 
@@ -143,6 +145,8 @@ function sendResponse(contexts: Array<Context>, isNsfw: Boolean): Promise<any> {
   } else if (sendNotNsfwResponse) {
     return context.reply("🌺 Это не похоже на NSFW-контент.", { reply_to_message_id: message.message_id })
   }
+
+  return Promise.resolve()
 }
 
 async function sendMediaNsfwResponse(context: Context): Promise<any> {
