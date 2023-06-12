@@ -8,9 +8,9 @@ import getModel from "@/helpers/model";
 import tensorflow from "@/helpers/tf";
 import {File, InputMediaPhoto, Message, User} from "grammy/types";
 
-const isUseNsfwSpy = false
+const isUseNsfwSpy = true
 
-const isUseNsfwJS = true
+const isUseNsfwJS = false
 
 let mediaGroupCache: Map<String, Array<Context>> = new Map()
 let runningMediaGroups: Set<String> = new Set()
