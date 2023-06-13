@@ -74,23 +74,25 @@ async function processMessage(context: Context) {
   const message = context.message
   const chat = message.chat
 
+  const messageLogId = `${message.message_id}@${chat.id}`
+
   if (!message.photo.length) {
-    logger.info(`Message '${message.message_id}' doesn't have a photo.`)
+    logger.info(`Message '${messageLogId}' doesn't have a photo.`)
     return false
   }
 
   if (message.has_media_spoiler) {
-    logger.info(`Message '${message.message_id}' is already spoilered.`)
+    logger.info(`Message '${messageLogId}' is already spoilered.`)
     return false
   }
 
   const photo = await context.getFile()
   const photoUrl = fileUrl(photo.file_path)
 
-  const data = await runAndLogPromise(`Downloading '${message.message_id}' message data`,
+  const data = await runAndLogPromise(`Downloading '${messageLogId}' message data`,
       () => download(photoUrl))
 
-  return await runAndLogPromise(`Scanning '${message.message_id}' message photo with '${engine.code}' engine`,
+  return await runAndLogPromise(`Scanning '${messageLogId}' message photo with '${engine.code}' engine`,
       () => engine.classify(data))
 }
 
