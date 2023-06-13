@@ -1,4 +1,4 @@
-import tensorflow from "@/helpers/tf";
+import tensorflow from "@/helper/tf";
 import Engine from "@/engine/engine";
 import * as nsfwjs from "nsfwjs";
 import {NSFWJS} from "nsfwjs";

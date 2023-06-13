@@ -7,11 +7,13 @@ import 'module-alias/register'
 import * as dotenv from 'dotenv'
 // Dependencies
 import {run} from '@grammyjs/runner'
-import Cluster from '@/helpers/Cluster'
-import bot from '@/helpers/bot'
-import handlePhoto from "@/handlers/handlePhoto";
-import logger, {runAndLog, runAndLogPromise} from "@/helpers/logger";
+import Cluster from '@/helper/Cluster'
+import handlePhoto from "@/handler/handlePhoto";
+import logger, {runAndLog, runAndLogPromise} from "@/helper/logger";
 import {engine} from "@/engine/engine";
+import handleDebugItCommand from "@/command/handleDebugItCommand";
+import bot, {registerCommand} from "@/helper/bot";
+import checkSuperAdmin from "@/middleware/checkSuperAdmin";
 
 dotenv.config({ path: `${__dirname}/../.env` })
 
@@ -26,7 +28,9 @@ function initializeEvents() {
 }
 
 async function initializeTelegramBot() {
+  registerCommand("debugit", checkSuperAdmin, handleDebugItCommand)
   bot.catch(console.error)
+
   await bot.init()
   run(bot)
 }

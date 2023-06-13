@@ -1,9 +1,9 @@
 import {Context} from "grammy";
-import bot from "@/helpers/bot";
-import fileUrl from "@/helpers/fileUrl";
+import bot from "@/helper/bot";
+import fileUrl from "@/helper/fileUrl";
 import * as download from 'download'
 import {InputMediaPhoto, User} from "grammy/types";
-import logger, {runAndLogPromise} from "@/helpers/logger";
+import logger, {runAndLogPromise} from "@/helper/logger";
 import {engine} from "@/engine/engine";
 
 let mediaGroupCache: Map<String, Array<Context>> = new Map()
