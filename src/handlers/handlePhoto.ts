@@ -1,16 +1,10 @@
 import {Context} from "grammy";
-import * as console from "console";
 import bot from "@/helpers/bot";
 import fileUrl from "@/helpers/fileUrl";
 import * as download from 'download'
-import nsfwSpy from "@/helpers/nsfwSpy";
-import getModel from "@/helpers/model";
-import tensorflow from "@/helpers/tf";
-import {File, InputMediaPhoto, Message, User} from "grammy/types";
-
-const isUseNsfwSpy = true
-
-const isUseNsfwJS = false
+import {InputMediaPhoto, User} from "grammy/types";
+import logger, {runAndLogPromise} from "@/helpers/logger";
+import {engine} from "@/engine/engine";
 
 let mediaGroupCache: Map<String, Array<Context>> = new Map()
 let runningMediaGroups: Set<String> = new Set()
@@ -33,24 +27,28 @@ export default async function handlePhoto(ctx: Context) {
         runningMediaGroups.delete(mediaGroupId)
         mediaGroupCache.delete(mediaGroupId)
 
-        processMediaGroup(mediaGroupId, contexts)
+        runAndLogPromise(`Processing '${mediaGroupId}' media group`,
+            () => processMediaGroup(mediaGroupId, contexts))
       }, 1000)
     }
     return
   } else {
-    processMedia(ctx)
+    void processMedia(ctx)
   }
 }
 
 
 async function processMedia(context: Context) {
-  const isNsfw = await processMessage(context, null)
+  const isNsfw = await runAndLogPromise(`Processing message ${context.message.message_id} from ${context.chat.id}`,
+      () => processMessage(context))
   sendResponse([context], isNsfw).then(() => postProcess([context], isNsfw))
 }
 
 async function processMediaGroup(mediaGroupId: String, contexts: Array<Context>) {
   let results = await Promise.all(contexts
-      .map((context) => processMessage(context, mediaGroupId)))
+      .map((context) =>
+          runAndLogPromise(`Processing message ${context.message.message_id} from ${context.chat.id} (media group ${mediaGroupId})`,
+              () => processMessage(context))))
 
   const isNsfw = results.find((it) => it)
   sendResponse(contexts, isNsfw).then(() => postProcess(contexts, isNsfw))
@@ -70,59 +68,30 @@ async function postProcess(contexts: Array<Context>, isNsfw: Boolean) {
   }
 }
 
-async function processMessage(context: Context, mediaGroupId: String) {
+async function processMessage(context: Context) {
   const start = new Date().getTime()
 
   const message = context.message
   const chat = message.chat
 
-  const messageLogId = mediaGroupId ? `${message.message_id}@${chat.id} (media group ${mediaGroupId}` : `${message.message_id}@${chat.id}`
-
-  console.log(`Processing message ${messageLogId}.`)
-
   if (!message.photo.length) {
-    console.log(`Message ${messageLogId} doesn't have a photo.`)
+    logger.info(`Message '${message.message_id}' doesn't have a photo.`)
     return false
   }
 
   if (message.has_media_spoiler) {
-    console.log(`Message ${messageLogId} is already spoilered.`)
+    logger.info(`Message '${message.message_id}' is already spoilered.`)
     return false
   }
 
   const photo = await context.getFile()
   const photoUrl = fileUrl(photo.file_path)
 
-  const data = await download(photoUrl)
-  logStateWithTime(start, `Message ${messageLogId} content is downloaded`)
+  const data = await runAndLogPromise(`Downloading '${message.message_id}' message data`,
+      () => download(photoUrl))
 
-  let isNsfw: Boolean
-  if (isUseNsfwSpy) {
-    const result = await nsfwSpy.classifyImageFromByteArray(data)
-    isNsfw = result.isNsfw
-
-    logStateWithTime(start, `Message ${messageLogId} content is scanned by NsfwSpy. Predictions: ${JSON.stringify(result)}`)
-  }
-
-  if (isUseNsfwJS) {
-    const image = await tensorflow.node.decodeImage(data)
-    const predictions = await getModel().classify(image)
-    image.dispose()
-
-    let nsfwProbability = 0.0
-    for (let prediction of predictions) {
-      const className = prediction.className
-      if (className == 'Porn' || className == 'Sexy' || className == 'Hentai') {
-        nsfwProbability += prediction.probability
-      }
-    }
-    isNsfw = nsfwProbability >= 0.5
-
-    logStateWithTime(start, `Message ${messageLogId} content is scanned by NSFWJS. NSFW Probability: ${nsfwProbability}. Predictions: ${JSON.stringify(predictions)}`)
-  }
-
-  logStateWithTime(start, `Message ${messageLogId} is processed`)
-  return isNsfw
+  return await runAndLogPromise(`Scanning '${message.message_id}' message photo with '${engine.code}' engine`,
+      () => engine.classify(data))
 }
 
 function sendResponse(contexts: Array<Context>, isNsfw: Boolean): Promise<any> {
@@ -131,7 +100,7 @@ function sendResponse(contexts: Array<Context>, isNsfw: Boolean): Promise<any> {
   const chat = message.chat
 
   if (isNsfw == undefined) {
-    return context.reply("😭 Что-то случилось и я пока не могу определить NSFW-контент в этом сообщении.", { reply_to_message_id: message.message_id })
+    return context.reply("😭 Что-то случилось и я пока не могу определить NSFW-контент в этом сообщении.\n\nОставляю это на вашей совести!", { reply_to_message_id: message.message_id })
   }
 
   const sendNotNsfwResponse = chat.type == "private"
@@ -199,5 +168,5 @@ AI <a href="t.me/${bot.botInfo.username}">Spoiler Nudes 🍒</a>
 
 function logStateWithTime(start, state) {
   const now = new Date().getTime()
-  console.info(`${state} in ${(now - start) / 1000}s.`)
+  logger.info(`${state} in ${(now - start) / 1000}s.`)
 }

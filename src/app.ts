@@ -10,37 +10,28 @@ import {run} from '@grammyjs/runner'
 import Cluster from '@/helpers/Cluster'
 import bot from '@/helpers/bot'
 import handlePhoto from "@/handlers/handlePhoto";
-import {loadModel} from "@/helpers/model";
-import nsfwSpy from "@/helpers/nsfwSpy";
-import tensorflow from "@/helpers/tf";
+import logger, {runAndLog, runAndLogPromise} from "@/helpers/logger";
+import {engine} from "@/engine/engine";
 
 dotenv.config({ path: `${__dirname}/../.env` })
 
 async function runApp() {
-  console.log('Starting app...')
+  runAndLog("Initializing events", initializeEvents)
+  await runAndLogPromise(`Initializing '${engine.code}' engine`, engine.initialize)
+  await runAndLog("Initializing Telegram bot", initializeTelegramBot)
+}
 
-  // Various events
-  console.log('Initializing events...')
+function initializeEvents() {
   bot.on(':photo', handlePhoto)
-  console.log('Events are successfully initialized.')
+}
 
-  // Errors
+async function initializeTelegramBot() {
   bot.catch(console.error)
-
-  console.log("Initializing NsfwSpy")
-  await nsfwSpy.load()
-  console.log("NsfwSpy are successfully initialized.")
-
-  console.log("Initializing NsfwJS")
-  tensorflow.enableProdMode()
-  await loadModel()
-  console.log("NsfwJS are successfully initialized.")
-
   await bot.init()
   run(bot)
-  console.info(`Bot ${bot.botInfo.username} is up and running`)
 }
 
 if (Cluster.isPrimary) {
-  void runApp()
+  runAndLogPromise("Starting app", runApp)
+      .then(() => logger.info(`Bot @${bot.botInfo.username} is up and running.`))
 }
