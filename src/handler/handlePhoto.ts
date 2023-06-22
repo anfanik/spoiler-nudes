@@ -40,7 +40,7 @@ export default async function handlePhoto(ctx: Context) {
 
 async function processMedia(context: Context) {
   const isNsfw = await runAndLogPromise(`Processing message ${context.message.message_id} from ${context.chat.id}`,
-      () => processMessage(context))
+      () => processMessageWithRetries(context))
   sendResponse([context], isNsfw).then(() => postProcess([context], isNsfw))
 }
 
@@ -48,10 +48,21 @@ async function processMediaGroup(mediaGroupId: String, contexts: Array<Context>)
   let results = await Promise.all(contexts
       .map((context) =>
           runAndLogPromise(`Processing message ${context.message.message_id} from ${context.chat.id} (media group ${mediaGroupId})`,
-              () => processMessage(context))))
+              () => processMessageWithRetries(context))))
 
   const isNsfw = results.find((it) => it)
   sendResponse(contexts, isNsfw).then(() => postProcess(contexts, isNsfw))
+}
+
+async function processMessageWithRetries(context: Context, retries: number = 0) {
+  let isNsfw = await processMessage(context)
+  if (isNsfw == null && retries < 3) {
+    return processMessageWithRetries(context, retries + 1)
+  }
+  if (retries > 0) {
+    logger.info(`Message ${context.message.message_id} from ${context.chat.id} is processed with ${retries} retries. isNsfw: ${isNsfw}.`)
+  }
+  return Promise.resolve(isNsfw)
 }
 
 async function postProcess(contexts: Array<Context>, isNsfw: Boolean) {
@@ -69,8 +80,6 @@ async function postProcess(contexts: Array<Context>, isNsfw: Boolean) {
 }
 
 async function processMessage(context: Context) {
-  const start = new Date().getTime()
-
   const message = context.message
   const chat = message.chat
 
@@ -166,9 +175,4 @@ AI <a href="t.me/${bot.botInfo.username}">Spoiler Nudes 🍒</a>
 посчитал это NSFW-контентом
 </tg-spoiler>
 `
-}
-
-function logStateWithTime(start, state) {
-  const now = new Date().getTime()
-  logger.info(`${state} in ${(now - start) / 1000}s.`)
 }
