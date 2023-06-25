@@ -1,5 +1,4 @@
-import {NextFunction} from 'grammy'
-import Context from "@/model/context";
+import {Context, NextFunction} from 'grammy'
 
 const thresholdSeconds = 30
 
