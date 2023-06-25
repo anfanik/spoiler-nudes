@@ -14,6 +14,7 @@ import {engine} from "@/engine/engine";
 import handleDebugItCommand from "@/command/handleDebugItCommand";
 import bot, {registerCommand} from "@/helper/bot";
 import checkSuperAdmin from "@/middleware/checkSuperAdmin";
+import ignoreOldMessageUpdates from "@/middleware/ignoreOldMessageUpdates";
 
 dotenv.config({ path: `${__dirname}/../.env` })
 
