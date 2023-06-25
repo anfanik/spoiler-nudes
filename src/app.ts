@@ -28,6 +28,7 @@ function initializeEvents() {
 }
 
 async function initializeTelegramBot() {
+  bot.use(ignoreOldMessageUpdates)
   registerCommand("debugit", checkSuperAdmin, handleDebugItCommand)
   bot.catch(console.error)
 
