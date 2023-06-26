@@ -111,7 +111,8 @@ function sendResponse(contexts: Array<Context>, isNsfw: Boolean): Promise<any> {
   const chat = message.chat
 
   if (isNsfw == undefined) {
-    return context.reply("😭 Что-то случилось и я пока не могу определить NSFW-контент в этом сообщении.\n\nОставляю это на вашей совести!", { reply_to_message_id: message.message_id })
+    // return context.reply("😭 Что-то случилось и я пока не могу определить NSFW-контент в этом сообщении.\n\nОставляю это на вашей совести!", { reply_to_message_id: message.message_id })
+    return Promise.resolve()
   }
 
   const sendNotNsfwResponse = chat.type == "private"
